@@ -37,36 +37,36 @@ void CDlgMsg_Ptdz::DoDataExchange(CDataExchange* pDX)
 	CDialog::DoDataExchange(pDX);
 }
 
-
 BOOL CDlgMsg_Ptdz::OnInitDialog()
 {
 	CDialog::OnInitDialog();
 
-	//获取当前工程路径
-	CString strFilePath = CConnectManager::Instance()->GetFileDir(CPmDataBase::Project);
-
-	//定义当前工程project库
-	m_strPMDB = strFilePath + _T("\\project.pmdb");
+	m_strMainIniPath = GetMainIniPath();
+	if (m_strMainIniPath.IsEmpty())
+	{
+		AfxMessageBox(_T("maininfo.ini文件中FilePath获取为空!"));
+		return TRUE;
+	}
 
 	//定义工程数据库路径,业务指定
-	m_strDataBasePath = PmMfc::Fun::SplitFileDir(GetMainIniPath()) + _T("\\newAnswerData.db");	
+	m_strAnswerDBPath = PmMfc::Fun::SplitFileDir(m_strMainIniPath) + _T("\\answerData.db");	
 
 	//定义工程压缩文件路径，业务指定
-	m_strGongChenZipPath = PmMfc::Fun::SplitFileDir(GetMainIniPath()) + _T("\\result.zip");   
+	m_strGongChenZipPath = PmMfc::Fun::SplitFileDir(m_strMainIniPath) + _T("\\result.zip");   
 
 	//获取maininfo.ini中的对方客户端句柄
-	PmMfc::Fun::ReadIniFileInfo(_T("AppInfo"),_T("fatherHWnd"), m_strHwnd_PTDZ ,GetMainIniPath());	
+	PmMfc::Fun::ReadIniFileInfo(_T("AppInfo"),_T("fatherHWnd"), m_strHwnd_PTDZ ,m_strMainIniPath);	
 
 	//填写slHWnd和slProcessId字段
 	DWORD dwProcessId = GetCurrentProcessId();
 	CString strProcessId;
 	strProcessId.Format(_T("%d"), dwProcessId);
-	PmMfc::Fun::WriteIniFileInfo(_T("AppInfo"),_T("slProcessId"), strProcessId ,GetMainIniPath());	
+	PmMfc::Fun::WriteIniFileInfo(_T("AppInfo"),_T("tjProcessId"), strProcessId ,m_strMainIniPath);	
 
 	HWND hWnd = GetSafeHwnd();
 	CString strHwnd;
 	strHwnd.Format(_T("%d"), hWnd);
-	PmMfc::Fun::WriteIniFileInfo(_T("AppInfo"),_T("slHWnd"), strHwnd ,GetMainIniPath());	
+	PmMfc::Fun::WriteIniFileInfo(_T("AppInfo"),_T("tjHWnd"), strHwnd ,m_strMainIniPath);	
 
 	return TRUE;
 }
@@ -78,74 +78,102 @@ END_MESSAGE_MAP()
 CString CDlgMsg_Ptdz::GetMainIniPath()	
 {
 	//获取imProjectInfo.ini路径
-	CString strIniPath = _T("C:\\TEMP\\simProjectInfo.ini");
 	CString strMainIniPath;
+	CString strIniPath = _T("C:\\TEMP\\simProjectInfo.ini");
 
 	//从中介ini路径获取maininfo.ini路径
-	BOOL bOk = PmMfc::Fun::ReadIniFileInfo(_T("AppInfo"),_T("FilePath"), strMainIniPath ,strIniPath);	
-
+	PmMfc::Fun::ReadIniFileInfo(_T("AppInfo"),_T("FilePath"), strMainIniPath ,strIniPath);
 	return strMainIniPath;
 }
 
-void CDlgMsg_Ptdz::ExportTable(const CString& strFilePathNew, const CString& strFilePathOld)
+void CDlgMsg_Ptdz::ExportGongChen(const CString& strDesPath)
 {
-	//导出算量表
-	ExportTable_JiChu(strFilePathNew, strFilePathOld);
-	ExportTable_Liang(strFilePathNew, strFilePathOld);
-	ExportTable_Zhu(strFilePathNew, strFilePathOld);
-	ExportTable_Ban(strFilePathNew, strFilePathOld);
-	ExportTable_Wall_JZ(strFilePathNew, strFilePathOld);
-	ExportTable_Wall_JG(strFilePathNew, strFilePathOld);
-	ExportTable_MenChuang(strFilePathNew, strFilePathOld);
-	ExportTable_Louti(strFilePathNew, strFilePathOld);
-	ExportTable_Other(strFilePathNew, strFilePathOld);
+	try
+	{
+		CZipFileManager zip;
+		CString strKeyValue;
+		CString strProjDir = CConnectManager::Instance()->GetFileDir(CPmDataBase::Project);		
+		CString strIniFilePath = CConnectManager::Instance()->GetIniPath(CPmDataBase::Project);	
 
-	ExportTable_GJ(strFilePathNew, strFilePathOld, eJiChu);
-	ExportTable_GJ(strFilePathNew, strFilePathOld, eZhu);
-	ExportTable_GJ(strFilePathNew, strFilePathOld, eLiang);
-	ExportTable_GJ(strFilePathNew, strFilePathOld, eBan);
-	ExportTable_GJ(strFilePathNew, strFilePathOld, eLouti);
-	ExportTable_GJ(strFilePathNew, strFilePathOld, eWall_JG);
+		PmMfc::Fun::ReadIniFileInfo(_T("Project"),_T("RunMode"), strKeyValue ,strIniFilePath);	
+
+		PmMfc::Fun::WriteIniFileInfo(_T("Project"),_T("RunMode"), _T("0") ,strIniFilePath);		
+
+		BOOL bOk = zip.ZipFolder(strDesPath, strProjDir, FALSE);								
+
+		PmMfc::Fun::WriteIniFileInfo(_T("Project"),_T("RunMode"), strKeyValue ,strIniFilePath);	
+	}
+	catch(...)
+	{
+		m_strErrorMsg += _T("工程压缩异常;");
+	}
 }
 
-void CDlgMsg_Ptdz::ExportTable_JiChu(const CString& strFilePathNew, const CString& strFilePathOld)
+void CDlgMsg_Ptdz::ExportTable(const CString& strAnswerDBPath, const CString& strProjectDBPath)
 {
-	CSqliteDataBase dbNew(strFilePathNew);
-	CSqliteDBStmt stmtNew(&dbNew);
-	stmtNew.Begin();
+	try
+	{
+		//导出算量表
+		ExportTable_JiChu(strAnswerDBPath, strProjectDBPath);
+		ExportTable_Liang(strAnswerDBPath, strProjectDBPath);
+		ExportTable_Zhu(strAnswerDBPath, strProjectDBPath);
+		ExportTable_Ban(strAnswerDBPath, strProjectDBPath);
+		ExportTable_Wall_JZ(strAnswerDBPath, strProjectDBPath);
+		ExportTable_Wall_JG(strAnswerDBPath, strProjectDBPath);
+		ExportTable_MenChuang(strAnswerDBPath, strProjectDBPath);
+		ExportTable_Louti(strAnswerDBPath, strProjectDBPath);
+		ExportTable_Other(strAnswerDBPath, strProjectDBPath);
+
+		ExportTable_GJ(strAnswerDBPath, strProjectDBPath, eJiChu);
+		ExportTable_GJ(strAnswerDBPath, strProjectDBPath, eZhu);
+		ExportTable_GJ(strAnswerDBPath, strProjectDBPath, eLiang);
+		ExportTable_GJ(strAnswerDBPath, strProjectDBPath, eBan);
+		ExportTable_GJ(strAnswerDBPath, strProjectDBPath, eLouti);
+		ExportTable_GJ(strAnswerDBPath, strProjectDBPath, eWall_JG);
+	}
+	catch(...)
+	{
+		m_strErrorMsg += _T("数据库导出异常;");
+	}
+}
+
+void CDlgMsg_Ptdz::ExportTable_JiChu(const CString& strAnswerDBPath, const CString& strProjectDBPath)
+{
+	CSqliteDataBase answerDB(strAnswerDBPath);
+	CSqliteDBStmt answerStmt(&answerDB);
+	answerStmt.Begin();
 
 	//清空数据表
-	CString strSQL_DEL = _T("DROP TABLE IF EXISTS jichu");
-	stmtNew.Exec(strSQL_DEL);
+	CString strSQL = _T("DROP TABLE IF EXISTS jichu");
+	answerStmt.Exec(strSQL);
 
 	//创建新的表单
-	CString strSqlNew = (_T("CREATE TABLE jichu(\n\
-												id INTEGER,\n\
-												comid INTEGER,--软件自定义ID，随构件自增\n\
-												comtype INTEGER,--构件类型\n\
-												calitemname TEXT,--项目名称\n\
-												unit TEXT,--单位\n\
-												mainmode INTEGER,--清单定额模式\n\
-												vectorparms BLOB,--截面数据\n\
-												tqd TEXT,--混凝土标号\n\
-												gcl REAL,--工程量\n\
-												PRIMARY KEY (id))"));
-	int rc = stmtNew.Exec(strSqlNew);
+	strSQL = (_T("CREATE TABLE jichu(\n\
+									 id INTEGER,\n\
+									 comtype INTEGER,--类型\n\
+									 calitemname TEXT,--筛选实体\n\
+									 unit TEXT,--筛选m3\n\
+									 mainmode INTEGER,--筛选清单定额模式\n\
+									 vectorparms BLOB,--截面数据\n\
+									 tqd TEXT,--混凝土标号\n\
+									 gcl REAL,--工程量\n\
+									 PRIMARY KEY (id))"));
+	answerStmt.Exec(strSQL);
+
 
 	//打开工程project数据库进行数据获取
-	CSqliteDataBase dbOld(strFilePathOld);
-	CSqliteDBStmt stmtOld(&dbOld);
+	CSqliteDataBase projectDB(strProjectDBPath);
+	CSqliteDBStmt projectStmt(&projectDB);
 
 	//获取result表单数据
-	CString strSqlOld;
-	strSqlOld.Format(_T("SELECT R.comid,C.comtype,R.cadhandle,R.calitemname,R.unit,R.mainmode,C.vectorparms,R.quantity\
-						 FROM result AS R\
-							  LEFT OUTER JOIN components AS C\
-								   ON R.comid = C.id\
-						 WHERE C.comtype IN (%s)"), m_strComtypeJichu);
+	strSQL.Format(_T("SELECT R.comid,C.comtype,R.cadhandle,R.calitemname,R.unit,R.mainmode,C.vectorparms,R.quantity\
+							FROM result AS R\
+								LEFT OUTER JOIN components AS C\
+									ON R.comid = C.id\
+							WHERE C.comtype IN (%s)"), m_strComtypeJichu);
 
-	stmtOld.Prepare(strSqlOld);
-	rc = stmtOld.Step();
+	projectStmt.Prepare(strSQL);
+	int rc = projectStmt.Step();
 
 	int iComtype = 0;
 	int iComid = 0;
@@ -158,51 +186,47 @@ void CDlgMsg_Ptdz::ExportTable_JiChu(const CString& strFilePathNew, const CStrin
 	CString strUnit;
 	double dQuantity = 0.0;
 	//从工程数据库获取数据并存入新建数据库
-	CString strSQLNew_Insert = _T("INSERT INTO jichu(comid,comtype,calitemname,unit,mainmode,vectorparms,tqd,gcl)\
-										  VALUES (:comid,:comtype,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
+	CString strSQLNew_Insert = _T("INSERT INTO jichu(comtype,calitemname,unit,mainmode,vectorparms,tqd,gcl)\
+										  VALUES (:comtype,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
 
-	stmtNew.Prepare(strSQLNew_Insert);
+	answerStmt.Prepare(strSQLNew_Insert);
 
 	while(SQLITE_ROW == rc)
 	{
-		stmtOld.Column_Int(_T("comid"), iComid);
-		stmtNew.Bind_Int(_T(":comid"),iComid);
+		projectStmt.Column_Int(_T("comtype"), iComtype);
+		answerStmt.Bind_Int(_T(":comtype"),iComtype);
 
-		stmtOld.Column_Int(_T("comtype"), iComtype);
-		stmtNew.Bind_Int(_T(":comtype"),iComtype);
+		projectStmt.Column_Text(_T("calitemname"), strCalitemname);
+		answerStmt.Bind_Text(_T(":calitemname"),strCalitemname);
 
-		stmtOld.Column_Text(_T("cadhandle"), strHandle);
-		stmtNew.Bind_Text(_T(":cadhandle"), strHandle);
+		projectStmt.Column_Text(_T("unit"), strUnit);
+		answerStmt.Bind_Text(_T(":unit"),strUnit);
 
-		stmtOld.Column_Text(_T("calitemname"), strCalitemname);
-		stmtNew.Bind_Text(_T(":calitemname"),strCalitemname);
+		projectStmt.Column_Int(_T("mainmode"), imainmode);
+		answerStmt.Bind_Int(_T(":mainmode"),imainmode);
 
-		stmtOld.Column_Text(_T("unit"), strUnit);
-		stmtNew.Bind_Text(_T(":unit"),strUnit);
+		projectStmt.Column_Blob(_T("vectorparms"), pBuffer,lBufferSize);
+		answerStmt.Bind_Blob(_T(":vectorparms"),pBuffer,lBufferSize);
 
-		stmtOld.Column_Int(_T("mainmode"), imainmode);
-		stmtNew.Bind_Int(_T(":mainmode"),imainmode);
-
-		stmtOld.Column_Blob(_T("vectorparms"), pBuffer,lBufferSize);
-		stmtNew.Bind_Blob(_T(":vectorparms"),pBuffer,lBufferSize);
-
-		stmtOld.Column_Double(_T("quantity"), dQuantity);
-		stmtNew.Bind_Double(_T(":gcl"), dQuantity);
-
+		projectStmt.Column_Int(_T("comid"), iComid);
+		projectStmt.Column_Text(_T("cadhandle"), strHandle);
 		CString strTqd = CUICommonCallBack::CallGetTqd(iComid, strHandle);
-		stmtNew.Bind_Text(_T(":tqd"), strTqd);
+		answerStmt.Bind_Text(_T(":tqd"), strTqd);
 
-		stmtNew.Step();
-		stmtNew.Reset();
+		projectStmt.Column_Double(_T("quantity"), dQuantity);
+		answerStmt.Bind_Double(_T(":gcl"), dQuantity);
 
-		rc = stmtOld.Step();
+		answerStmt.Step();
+		answerStmt.Reset();
+
+		rc = projectStmt.Step();
 	}
-	stmtNew.Commit();
+	answerStmt.Commit();
 }
 
-void CDlgMsg_Ptdz::ExportTable_Zhu(const CString& strFilePathNew, const CString& strFilePathOld)
+void CDlgMsg_Ptdz::ExportTable_Zhu(const CString& strAnswerDBPath, const CString& strProjectDBPath)
 {
-	CSqliteDataBase dbNew(strFilePathNew);
+	CSqliteDataBase dbNew(strAnswerDBPath);
 
 	//创建新数据库表单-基础部分
 	CSqliteDBStmt stmtNew(&dbNew);
@@ -214,36 +238,31 @@ void CDlgMsg_Ptdz::ExportTable_Zhu(const CString& strFilePathNew, const CString&
 
 	//创建新的工程量和钢筋表单
 	CString strSqlNew = (_T("CREATE TABLE zhu(id INTEGER,\
-											  comid INTEGER,\
-											  comtype INTEGER,\
-											  cadhandle TEXT,\
-											  calitemname TEXT,\
-											  unit TEXT,\
-											  mainmode INTEGER,\
-											  vectorparms BLOB,\
-											  tqd TEXT,\
-											  gcl REAL,\
+											  comid INTEGER,--与cadhandle用于统计个数\n\
+											  comtype INTEGER,--类型\n\
+											  cadhandle TEXT,--与comid用于统计个数\n\
+											  calitemname TEXT,--筛选实体\n\
+											  unit TEXT,--筛选m3\n\
+											  mainmode INTEGER,--筛选清单定额模式\n\
+											  vectorparms BLOB,--截面数据\n\
+											  tqd TEXT,--混凝土标号\n\
+											  gcl REAL,--工程量\n\
 											  PRIMARY KEY (id))"));
 	stmtNew.Exec(strSqlNew);
 
 	//打开工程project数据库进行数据获取
-	CSqliteDataBase dbOld(strFilePathOld);
+	CSqliteDataBase dbOld(strProjectDBPath);
 	CSqliteDBStmt stmtOld(&dbOld);
 
 	CString strSQLOld;
 	strSQLOld.Format(_T("SELECT *\
-						FROM result AS R\
-						LEFT OUTER JOIN components AS C\
-						ON R.comid = C.id\
-						WHERE C.comtype IN (%s)"), m_strComtypeZhu);
+						 FROM result AS R\
+							  LEFT OUTER JOIN components AS C\
+							       ON R.comid = C.id\
+						 WHERE C.comtype IN (%s)"), m_strComtypeZhu);
 
 	stmtOld.Prepare(strSQLOld);
 	int rc = stmtOld.Step();
-
-	if (SQLITE_ROW != rc)
-	{
-		AfxMessageBox(stmtOld.ErrMsg());
-	}
 
 	int iComid = 0;
 	int iComtype = 0;
@@ -257,7 +276,7 @@ void CDlgMsg_Ptdz::ExportTable_Zhu(const CString& strFilePathNew, const CString&
 	double dQuantity = 0.0;
 
 	CString strSQLNew_Insert = _T("INSERT INTO zhu(comid,comtype,cadhandle,calitemname,unit,mainmode,vectorparms,tqd,gcl)\
-								  VALUES (:comid,:comtype,:cadhandle,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
+										  VALUES (:comid,:comtype,:cadhandle,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
 	stmtNew.Prepare(strSQLNew_Insert);
 	while (SQLITE_ROW == rc)
 	{
@@ -297,9 +316,9 @@ void CDlgMsg_Ptdz::ExportTable_Zhu(const CString& strFilePathNew, const CString&
 
 }
 
-void CDlgMsg_Ptdz::ExportTable_Ban(const CString& strFilePathNew, const CString& strFilePathOld)
+void CDlgMsg_Ptdz::ExportTable_Ban(const CString& strAnswerDBPath, const CString& strProjectDBPath)
 {
-	CSqliteDataBase dbNew(strFilePathNew);
+	CSqliteDataBase dbNew(strAnswerDBPath);
 
 	//创建新数据库表单-基础部分
 	CSqliteDBStmt stmtNew(&dbNew);
@@ -311,36 +330,29 @@ void CDlgMsg_Ptdz::ExportTable_Ban(const CString& strFilePathNew, const CString&
 
 	//创建新的工程量和钢筋表单
 	CString strSqlNew = (_T("CREATE TABLE ban(id INTEGER,\
-							comid INTEGER,\
-							comtype INTEGER,\
-							width TEXT,\
-							cadhandle TEXT,\
-							calitemname TEXT,\
-							unit TEXT,\
-							mainmode INTEGER,\
-							tqd TEXT,\
-							gcl REAL,\
-							PRIMARY KEY (id))"));
+											  comtype INTEGER,--类型\n\
+											  width TEXT,--板厚\n\
+											  calitemname TEXT,--筛选实体\n\
+											  unit TEXT,--筛选m3\n\
+											  mainmode INTEGER,--筛选清单定额模式\n\
+											  tqd TEXT,--混凝土标号\n\
+											  gcl REAL,--工程量\n\
+											  PRIMARY KEY (id))"));
 	stmtNew.Exec(strSqlNew);
 
 	//打开工程project数据库进行数据获取
-	CSqliteDataBase dbOld(strFilePathOld);
+	CSqliteDataBase dbOld(strProjectDBPath);
 	CSqliteDBStmt stmtOld(&dbOld);
 
 	CString strSQLOld;
 	strSQLOld.Format(_T("SELECT *\
-						FROM result AS R\
-						LEFT OUTER JOIN components AS C\
-						ON R.comid = C.id\
-						WHERE C.comtype IN (%s)"), m_strComtypeBan);
+						 FROM result AS R\
+							  LEFT OUTER JOIN components AS C\
+								   ON R.comid = C.id\
+						 WHERE C.comtype IN (%s)"), m_strComtypeBan);
 
 	stmtOld.Prepare(strSQLOld);
 	int rc = stmtOld.Step();
-
-	if (SQLITE_ROW != rc)
-	{
-		AfxMessageBox(stmtOld.ErrMsg());
-	}
 
 	int iComid = 0;
 	int iComtype = 0;
@@ -353,19 +365,15 @@ void CDlgMsg_Ptdz::ExportTable_Ban(const CString& strFilePathNew, const CString&
 	CString strTqd;
 	double dQuantity = 0.0;
 	CString strWidth;
-	CString strSQLNew_Insert = _T("INSERT INTO ban(comid,comtype,width,cadhandle,calitemname,unit,mainmode,tqd,gcl)\
-								  VALUES (:comid,:comtype,:width,:cadhandle,:calitemname,:unit,:mainmode,:tqd,:gcl)");
+	CString strSQLNew_Insert = _T("INSERT INTO ban(comtype,width,calitemname,unit,mainmode,tqd,gcl)\
+										  VALUES (:comtype,:width,:calitemname,:unit,:mainmode,:tqd,:gcl)");
 	stmtNew.Prepare(strSQLNew_Insert);
 	while (SQLITE_ROW == rc)
 	{
-		stmtOld.Column_Int(_T("comid"), iComid);
-		stmtNew.Bind_Int(_T(":comid"), iComid);
-
 		stmtOld.Column_Int(_T("comtype"), iComtype);
 		stmtNew.Bind_Int(_T(":comtype"), iComtype);
 
 		stmtOld.Column_Text(_T("cadhandle"), strHandle);
-		stmtNew.Bind_Text(_T(":cadhandle"), strHandle);
 
 		stmtOld.Column_Text(_T("calitemname"), strCalitem);
 		stmtNew.Bind_Text(_T(":calitemname"), strCalitem);
@@ -379,6 +387,8 @@ void CDlgMsg_Ptdz::ExportTable_Ban(const CString& strFilePathNew, const CString&
 		stmtOld.Column_Double(_T("quantity"), dQuantity);
 		stmtNew.Bind_Double(_T(":gcl"), dQuantity);
 
+		stmtOld.Column_Int(_T("comid"), iComid);
+
 		CString strTqd = CUICommonCallBack::CallGetTqd(iComid, strHandle);
 		stmtNew.Bind_Text(_T(":tqd"), strTqd);
 
@@ -394,9 +404,9 @@ void CDlgMsg_Ptdz::ExportTable_Ban(const CString& strFilePathNew, const CString&
 
 }
 
-void CDlgMsg_Ptdz::ExportTable_Liang(const CString& strFilePathNew, const CString& strFilePathOld)
+void CDlgMsg_Ptdz::ExportTable_Liang(const CString& strAnswerDBPath, const CString& strProjectDBPath)
 {
-	CSqliteDataBase dbNew(strFilePathNew);
+	CSqliteDataBase dbNew(strAnswerDBPath);
 	CSqliteDBStmt stmtNew(&dbNew);
 	stmtNew.Begin();
 
@@ -405,34 +415,34 @@ void CDlgMsg_Ptdz::ExportTable_Liang(const CString& strFilePathNew, const CStrin
 	stmtNew.Exec(strSQL_DEL);
 
 	//创建新的表单
-	CString strSqlNew_GCL = (_T("CREATE TABLE liang(id INTEGER,\
-								comid INTEGER,\
-								comtype INTEGER,\
-								calitemname TEXT,\
-								unit TEXT,\
-								mainmode INTEGER,\
-								vectorparms BLOB,\
-								tqd TEXT,\
-								gcl REAL,\
-								PRIMARY KEY (id))"));
+	CString strSqlNew = (_T("CREATE TABLE liang(\n\
+												id INTEGER,\n\
+												comtype INTEGER,--类型\n\
+												calitemname TEXT,--筛选实体\n\
+												unit TEXT,--筛选m3\n\
+												mainmode INTEGER,--筛选清单定额模式\n\
+												vectorparms BLOB,--截面数据\n\
+												tqd TEXT,--混凝土标号\n\
+												gcl REAL,--工程量\n\
+												PRIMARY KEY (id))"));
 
-	int rc = stmtNew.Exec(strSqlNew_GCL);
+	int rc = stmtNew.Exec(strSqlNew);
 
 	//打开工程project数据库进行数据获取
-	CSqliteDataBase dbOld(strFilePathOld);
+	CSqliteDataBase dbOld(strProjectDBPath);
 	CSqliteDBStmt stmtOld(&dbOld);
 
 	//获取result表单数据
-	CString strSqlOld_gcl;
-	strSqlOld_gcl.Format(_T("SELECT R.comid,C.comtype,R.cadhandle,R.calitemname,R.unit,R.mainmode,C.vectorparms,R.quantity\
+	CString strSqlOld;
+	strSqlOld.Format(_T("SELECT R.comid,C.comtype,R.cadhandle,R.calitemname,R.unit,R.mainmode,C.vectorparms,R.quantity\
 							FROM result AS R\
-							LEFT OUTER JOIN components AS C\
-							ON R.comid = C.id\
-							WHERE C.comtype IN (%s)"), m_strComtypeJichu);
+								LEFT OUTER JOIN components AS C\
+									ON R.comid = C.id\
+							WHERE C.comtype IN (%s)"), m_strComtypeLiang);
 
-	stmtOld.Prepare(strSqlOld_gcl);
+	stmtOld.Prepare(strSqlOld);
 	rc = stmtOld.Step();
-
+		
 	int iComtype = 0;
 	int iComid = 0;
 	int imainmode = 0;
@@ -444,21 +454,17 @@ void CDlgMsg_Ptdz::ExportTable_Liang(const CString& strFilePathNew, const CStrin
 	CString strUnit;
 	double dQuantity = 0.0;
 	//从工程数据库获取数据并存入新建数据库
-	CString strSqlInsert = _T("INSERT INTO liang(comid,comtype,calitemname,unit,mainmode,vectorparms,tqd,gcl)\
-							  VALUES (:comid,:comtype,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
+	CString strSqlInsert = _T("INSERT INTO liang(comtype,calitemname,unit,mainmode,vectorparms,tqd,gcl)\
+									  VALUES (:comtype,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
 
 	stmtNew.Prepare(strSqlInsert);
 
 	while(SQLITE_ROW == rc)
 	{
-		stmtOld.Column_Int(_T("comid"), iComid);
-		stmtNew.Bind_Int(_T(":comid"),iComid);
-
 		stmtOld.Column_Int(_T("comtype"), iComtype);
 		stmtNew.Bind_Int(_T(":comtype"),iComtype);
 
 		stmtOld.Column_Text(_T("cadhandle"), strHandle);
-		stmtNew.Bind_Text(_T(":cadhandle"), strHandle);
 
 		stmtOld.Column_Text(_T("calitemname"), strCalitemname);
 		stmtNew.Bind_Text(_T(":calitemname"),strCalitemname);
@@ -475,6 +481,7 @@ void CDlgMsg_Ptdz::ExportTable_Liang(const CString& strFilePathNew, const CStrin
 		stmtOld.Column_Double(_T("quantity"), dQuantity);
 		stmtNew.Bind_Double(_T(":gcl"), dQuantity);
 
+		stmtOld.Column_Int(_T("comid"), iComid);
 		CString strTqd = CUICommonCallBack::CallGetTqd(iComid, strHandle);
 		stmtNew.Bind_Text(_T(":tqd"), strTqd);
 
@@ -486,10 +493,10 @@ void CDlgMsg_Ptdz::ExportTable_Liang(const CString& strFilePathNew, const CStrin
 	stmtNew.Commit();
 }
 
-void CDlgMsg_Ptdz::ExportTable_Wall_JZ(const CString& strFilePathNew, const CString& strFilePathOld)
+void CDlgMsg_Ptdz::ExportTable_Wall_JZ(const CString& strAnswerDBPath, const CString& strProjectDBPath)
 {
 
-	CSqliteDataBase dbNew(strFilePathNew);
+	CSqliteDataBase dbNew(strAnswerDBPath);
 	CSqliteDBStmt stmtNew(&dbNew);
 	stmtNew.Begin();
 
@@ -499,29 +506,28 @@ void CDlgMsg_Ptdz::ExportTable_Wall_JZ(const CString& strFilePathNew, const CStr
 
 	//创建新的表单
 	CString strSqlNew_GCL = (_T("CREATE TABLE wall_jz(id INTEGER,\
-								comid INTEGER,\
-								comtype INTEGER,\
-								width TEXT,\
-								calitemname TEXT,\
-								unit TEXT,\
-								mainmode INTEGER,\
-								tqd TEXT,\
-								gcl REAL,\
-								PRIMARY KEY (id))"));
+													  comtype INTEGER,--类型\n\
+													  width TEXT,--墙厚\n\
+													  calitemname TEXT,--筛选实体\n\
+													  unit TEXT,--筛选m3\n\
+													  mainmode INTEGER,--筛选清单定额模式\n\
+													  tqd TEXT,--混凝土标号\n\
+													  gcl REAL,--工程量\n\
+													  PRIMARY KEY (id))"));
 
 	int rc = stmtNew.Exec(strSqlNew_GCL);
 
 	//打开工程project数据库进行数据获取
-	CSqliteDataBase dbOld(strFilePathOld);
+	CSqliteDataBase dbOld(strProjectDBPath);
 	CSqliteDBStmt stmtOld(&dbOld);
 
 	//获取result表单数据
 	CString strSqlOld_gcl;
 	strSqlOld_gcl.Format(_T("SELECT R.comid,C.comtype,R.cadhandle,R.calitemname,R.unit,R.mainmode,C.vectorparms,R.quantity\
-							FROM result AS R\
-							LEFT OUTER JOIN components AS C\
-							ON R.comid = C.id\
-							WHERE C.comtype IN (%s)"), m_strComtypeWall_JZ);
+							 FROM result AS R\
+								  LEFT OUTER JOIN components AS C\
+									   ON R.comid = C.id\
+							 WHERE C.comtype IN (%s)"), m_strComtypeWall_JZ);
 
 	stmtOld.Prepare(strSqlOld_gcl);
 	rc = stmtOld.Step();
@@ -538,21 +544,17 @@ void CDlgMsg_Ptdz::ExportTable_Wall_JZ(const CString& strFilePathNew, const CStr
 	CString strWidth;
 	double dQuantity = 0.0;
 	//从工程数据库获取数据并存入新建数据库
-	CString strSqlInsert = _T("INSERT INTO wall_jz(comid,comtype,width,calitemname,unit,mainmode,tqd,gcl)\
-							  VALUES (:comid,:comtype,:width,:calitemname,:unit,:mainmode,:tqd,:gcl)");
+	CString strSqlInsert = _T("INSERT INTO wall_jz(comtype,width,calitemname,unit,mainmode,tqd,gcl)\
+									  VALUES (:comtype,:width,:calitemname,:unit,:mainmode,:tqd,:gcl)");
 
 	stmtNew.Prepare(strSqlInsert);
 
 	while(SQLITE_ROW == rc)
 	{
-		stmtOld.Column_Int(_T("comid"), iComid);
-		stmtNew.Bind_Int(_T(":comid"),iComid);
-
 		stmtOld.Column_Int(_T("comtype"), iComtype);
 		stmtNew.Bind_Int(_T(":comtype"),iComtype);
 
 		stmtOld.Column_Text(_T("cadhandle"), strHandle);
-		stmtNew.Bind_Text(_T(":cadhandle"), strHandle);
 
 		stmtOld.Column_Text(_T("calitemname"), strCalitemname);
 		stmtNew.Bind_Text(_T(":calitemname"),strCalitemname);
@@ -569,6 +571,8 @@ void CDlgMsg_Ptdz::ExportTable_Wall_JZ(const CString& strFilePathNew, const CStr
 		stmtOld.Column_Double(_T("quantity"), dQuantity);
 		stmtNew.Bind_Double(_T(":gcl"), dQuantity);
 
+		stmtOld.Column_Int(_T("comid"), iComid);
+
 		CString strTqd = CUICommonCallBack::CallGetTqd(iComid, strHandle);
 		stmtNew.Bind_Text(_T(":tqd"), strTqd);
 
@@ -583,9 +587,9 @@ void CDlgMsg_Ptdz::ExportTable_Wall_JZ(const CString& strFilePathNew, const CStr
 	stmtNew.Commit();
 }
 
-void CDlgMsg_Ptdz::ExportTable_Wall_JG(const CString& strFilePathNew, const CString& strFilePathOld)
+void CDlgMsg_Ptdz::ExportTable_Wall_JG(const CString& strAnswerDBPath, const CString& strProjectDBPath)
 {
-	CSqliteDataBase dbNew(strFilePathNew);
+	CSqliteDataBase dbNew(strAnswerDBPath);
 	CSqliteDBStmt stmtNew(&dbNew);
 	stmtNew.Begin();
 
@@ -595,29 +599,28 @@ void CDlgMsg_Ptdz::ExportTable_Wall_JG(const CString& strFilePathNew, const CStr
 
 	//创建新的表单
 	CString strSqlNew_GCL = (_T("CREATE TABLE wall_jg(id INTEGER,\
-								comid INTEGER,\
-								comtype INTEGER,\
-								calitemname TEXT,\
-								unit TEXT,\
-								mainmode INTEGER,\
-								vectorparms BLOB,\
-								tqd TEXT,\
-								gcl REAL,\
-								PRIMARY KEY (id))"));
+													  comtype INTEGER,--类型\n\
+													  calitemname TEXT,--筛选实体\n\
+													  unit TEXT,--筛选m3\n\
+													  mainmode INTEGER,--筛选清单定额模式\n\
+													  vectorparms BLOB,--截面数据\n\
+													  tqd TEXT,--混凝土标号\n\
+													  gcl REAL,--工程量\n\
+													  PRIMARY KEY (id))"));
 
 	int rc = stmtNew.Exec(strSqlNew_GCL);
 
 	//打开工程project数据库进行数据获取
-	CSqliteDataBase dbOld(strFilePathOld);
+	CSqliteDataBase dbOld(strProjectDBPath);
 	CSqliteDBStmt stmtOld(&dbOld);
 
 	//获取result表单数据
 	CString strSqlOld_gcl;
 	strSqlOld_gcl.Format(_T("SELECT R.comid,C.comtype,R.cadhandle,R.calitemname,R.unit,R.mainmode,C.vectorparms,R.quantity\
-							FROM result AS R\
-							LEFT OUTER JOIN components AS C\
-							ON R.comid = C.id\
-							WHERE C.comtype IN (%s)"), m_strComtypeWall_JG);
+							 FROM result AS R\
+								  LEFT OUTER JOIN components AS C\
+									   ON R.comid = C.id\
+							 WHERE C.comtype IN (%s)"), m_strComtypeWall_JG);
 
 	stmtOld.Prepare(strSqlOld_gcl);
 	rc = stmtOld.Step();
@@ -633,21 +636,19 @@ void CDlgMsg_Ptdz::ExportTable_Wall_JG(const CString& strFilePathNew, const CStr
 	CString strUnit;
 	double dQuantity = 0.0;
 	//从工程数据库获取数据并存入新建数据库
-	CString strSqlInsert = _T("INSERT INTO wall_jg(comid,comtype,calitemname,unit,mainmode,vectorparms,tqd,gcl)\
-							  VALUES (:comid,:comtype,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
+	CString strSqlInsert = _T("INSERT INTO wall_jg(comtype,calitemname,unit,mainmode,vectorparms,tqd,gcl)\
+									  VALUES (:comtype,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
 
 	stmtNew.Prepare(strSqlInsert);
 
 	while(SQLITE_ROW == rc)
 	{
 		stmtOld.Column_Int(_T("comid"), iComid);
-		stmtNew.Bind_Int(_T(":comid"),iComid);
 
 		stmtOld.Column_Int(_T("comtype"), iComtype);
 		stmtNew.Bind_Int(_T(":comtype"),iComtype);
 
 		stmtOld.Column_Text(_T("cadhandle"), strHandle);
-		stmtNew.Bind_Text(_T(":cadhandle"), strHandle);
 
 		stmtOld.Column_Text(_T("calitemname"), strCalitemname);
 		stmtNew.Bind_Text(_T(":calitemname"),strCalitemname);
@@ -675,9 +676,9 @@ void CDlgMsg_Ptdz::ExportTable_Wall_JG(const CString& strFilePathNew, const CStr
 	stmtNew.Commit();
 }
 
-void CDlgMsg_Ptdz::ExportTable_Louti(const CString& strFilePathNew, const CString& strFilePathOld)
+void CDlgMsg_Ptdz::ExportTable_Louti(const CString& strAnswerDBPath, const CString& strProjectDBPath)
 {
-	CSqliteDataBase dbNew(strFilePathNew);
+	CSqliteDataBase dbNew(strAnswerDBPath);
 	CSqliteDBStmt stmtNew(&dbNew);
 	stmtNew.Begin();
 
@@ -688,29 +689,28 @@ void CDlgMsg_Ptdz::ExportTable_Louti(const CString& strFilePathNew, const CStrin
 
 	//创建新的表单
 	CString strSqlNew_GCL = (_T("CREATE TABLE louti(id INTEGER,\
-								comid INTEGER,\
-								comtype INTEGER,\
-								calitemname TEXT,\
-								unit TEXT,\
-								mainmode INTEGER,\
-								vectorparms BLOB,\
-								tqd TEXT,\
-								gcl REAL,\
-								PRIMARY KEY (id))"));
+													comtype INTEGER,--类型\n\
+													calitemname TEXT,--筛选实体\n\
+													unit TEXT,--筛选m3\n\
+													mainmode INTEGER,--筛选清单定额模式\n\
+													vectorparms BLOB,--截面数据\n\
+													tqd TEXT,--混凝土标号\n\
+													gcl REAL,--工程量\n\
+													PRIMARY KEY (id))"));
 
 	int rc = stmtNew.Exec(strSqlNew_GCL);
 
 	//打开工程project数据库进行数据获取
-	CSqliteDataBase dbOld(strFilePathOld);
+	CSqliteDataBase dbOld(strProjectDBPath);
 	CSqliteDBStmt stmtOld(&dbOld);
 
 	//获取result表单数据
 	CString strSqlOld_gcl;
 	strSqlOld_gcl.Format(_T("SELECT R.comid,C.comtype,R.cadhandle,R.calitemname,R.unit,R.mainmode,C.vectorparms,R.transformula\
-							FROM result AS R\
-							LEFT OUTER JOIN components AS C\
-							ON R.comid = C.id\
-							WHERE C.comtype IN (%s)"), m_strComtypeLouti);
+							 FROM result AS R\
+								  LEFT OUTER JOIN components AS C\
+									   ON R.comid = C.id\
+							 WHERE C.comtype IN (%s)"), m_strComtypeLouti);
 
 	stmtOld.Prepare(strSqlOld_gcl);
 	rc = stmtOld.Step();
@@ -726,21 +726,19 @@ void CDlgMsg_Ptdz::ExportTable_Louti(const CString& strFilePathNew, const CStrin
 	CString strUnit;
 	double dtransformula = 0.0;
 	//从工程数据库获取数据并存入新建数据库
-	CString strSqlInsert = _T("INSERT INTO louti(comid,comtype,calitemname,unit,mainmode,vectorparms,tqd,gcl)\
-							  VALUES (:comid,:comtype,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
+	CString strSqlInsert = _T("INSERT INTO louti(comtype,calitemname,unit,mainmode,vectorparms,tqd,gcl)\
+									  VALUES (:comtype,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
 
 	stmtNew.Prepare(strSqlInsert);
 
 	while(SQLITE_ROW == rc)
 	{
 		stmtOld.Column_Int(_T("comid"), iComid);
-		stmtNew.Bind_Int(_T(":comid"),iComid);
 
 		stmtOld.Column_Int(_T("comtype"), iComtype);
 		stmtNew.Bind_Int(_T(":comtype"),iComtype);
 
 		stmtOld.Column_Text(_T("cadhandle"), strHandle);
-		stmtNew.Bind_Text(_T(":cadhandle"), strHandle);
 
 		stmtOld.Column_Text(_T("calitemname"), strCalitemname);
 		stmtNew.Bind_Text(_T(":calitemname"),strCalitemname);
@@ -768,9 +766,9 @@ void CDlgMsg_Ptdz::ExportTable_Louti(const CString& strFilePathNew, const CStrin
 	stmtNew.Commit();
 }
 
-void CDlgMsg_Ptdz::ExportTable_MenChuang(const CString& strFilePathNew, const CString& strFilePathOld)
+void CDlgMsg_Ptdz::ExportTable_MenChuang(const CString& strAnswerDBPath, const CString& strProjectDBPath)
 {
-	CSqliteDataBase dbNew(strFilePathNew);
+	CSqliteDataBase dbNew(strAnswerDBPath);
 	CSqliteDBStmt stmtNew(&dbNew);
 	stmtNew.Begin();
 
@@ -780,25 +778,25 @@ void CDlgMsg_Ptdz::ExportTable_MenChuang(const CString& strFilePathNew, const CS
 
 	//创建新的表单
 	CString strSqlNew = (_T("CREATE TABLE menchuang(id INTEGER,\
-							comid INTEGER,\
-							comtype INTEGER,\
-							cadhandle TEXT,\
-							vectorparms BLOB,\
-							PRIMARY KEY (id))"));
+													comid INTEGER,--与cadhandle用于统计个数\n\
+													comtype INTEGER,--类型\n\
+													cadhandle TEXT,--与comid用于统计个数\n\
+													vectorparms BLOB,--截面数据\n\
+													PRIMARY KEY (id))"));
 	int rc = stmtNew.Exec(strSqlNew);
 
 	//打开工程project数据库进行数据获取
-	CSqliteDataBase dbOld(strFilePathOld);
+	CSqliteDataBase dbOld(strProjectDBPath);
 	CSqliteDBStmt stmtOld(&dbOld);
 
 	//获取result表单数据
 	CString strSqlOld;
 	strSqlOld.Format(_T("SELECT R.comid,C.comtype,R.cadhandle,C.vectorparms\
-						FROM result AS R\
-						LEFT OUTER JOIN components AS C\
-						ON R.comid = C.id\
-						WHERE C.comtype IN (%s) OR\
-						C.comtype IN (%s)"), m_strComtypeDoor,m_strComtypeWindow);
+						 FROM result AS R\
+							  LEFT OUTER JOIN components AS C\
+								   ON R.comid = C.id\
+						 WHERE C.comtype IN (%s) OR\
+						 C.comtype IN (%s)"), m_strComtypeDoor,m_strComtypeWindow);
 
 	stmtOld.Prepare(strSqlOld);
 	rc = stmtOld.Step();
@@ -815,7 +813,7 @@ void CDlgMsg_Ptdz::ExportTable_MenChuang(const CString& strFilePathNew, const CS
 	double dQuantity = 0.0;
 	//从工程数据库获取数据并存入新建数据库
 	CString strSQLNew_Insert = _T("INSERT INTO menchuang(comid,comtype,cadhandle,vectorparms)\
-								  VALUES (:comid,:comtype,:cadhandle,:vectorparms)");
+										  VALUES (:comid,:comtype,:cadhandle,:vectorparms)");
 
 	stmtNew.Prepare(strSQLNew_Insert);
 
@@ -841,9 +839,9 @@ void CDlgMsg_Ptdz::ExportTable_MenChuang(const CString& strFilePathNew, const CS
 	stmtNew.Commit();
 }
 
-void CDlgMsg_Ptdz::ExportTable_Other(const CString& strFilePathNew, const CString& strFilePathOld)
+void CDlgMsg_Ptdz::ExportTable_Other(const CString& strAnswerDBPath, const CString& strProjectDBPath)
 {
-	CSqliteDataBase dbNew(strFilePathNew);
+	CSqliteDataBase dbNew(strAnswerDBPath);
 	CSqliteDBStmt stmtNew(&dbNew);
 	stmtNew.Begin();
 
@@ -853,31 +851,30 @@ void CDlgMsg_Ptdz::ExportTable_Other(const CString& strFilePathNew, const CStrin
 
 	//创建新的表单
 	CString strSqlNew_GCL = (_T("CREATE TABLE other(id INTEGER,\
-													comid INTEGER,\
-													comtype INTEGER,\
-													calitemname TEXT,\
-													unit TEXT,\
-													mainmode INTEGER,\
-													vectorparms BLOB,\
-													tqd TEXT,\
-													gcl REAL,\
+													comtype INTEGER,--类型可用于筛选\n\
+													calitemname TEXT,--筛选实体\n\
+													unit TEXT,--筛选m3\n\
+													mainmode INTEGER,--筛选清单定额模式\n\
+													vectorparms BLOB,--截面数据\n\
+													tqd TEXT,--混凝土标号\n\
+													gcl REAL,--工程量\n\
 													PRIMARY KEY (id))"));
 
 	int rc = stmtNew.Exec(strSqlNew_GCL);
 
 	//打开工程project数据库进行数据获取
-	CSqliteDataBase dbOld(strFilePathOld);
+	CSqliteDataBase dbOld(strProjectDBPath);
 	CSqliteDBStmt stmtOld(&dbOld);
 
 	//获取result表单数据
 	CString strSqlOld_gcl;
 	strSqlOld_gcl.Format(_T("SELECT R.comid,C.comtype,R.cadhandle,R.calitemname,R.unit,R.mainmode,C.vectorparms,R.quantity\
-							FROM result AS R\
-							LEFT OUTER JOIN components AS C\
-							ON R.comid = C.id\
-							WHERE C.comtype IN (%s) OR\
-							C.comtype IN (%s) OR\
-							C.comtype IN (%s)"), m_strComtypeDecorate, m_strComtypeLouti, m_strComtypeTufang);
+							 FROM result AS R\
+								  LEFT OUTER JOIN components AS C\
+									   ON R.comid = C.id\
+							 WHERE C.comtype IN (%s) OR\
+							 C.comtype IN (%s) OR\
+							 C.comtype IN (%s)"), m_strComtypeDecorate, m_strComtypeLouti, m_strComtypeTufang);
 
 	stmtOld.Prepare(strSqlOld_gcl);
 	rc = stmtOld.Step();
@@ -893,21 +890,19 @@ void CDlgMsg_Ptdz::ExportTable_Other(const CString& strFilePathNew, const CStrin
 	CString strUnit;
 	double dQuantity = 0.0;
 	//从工程数据库获取数据并存入新建数据库
-	CString strSqlInsert = _T("INSERT INTO other(comid,comtype,calitemname,unit,mainmode,vectorparms,tqd,gcl)\
-							  VALUES (:comid,:comtype,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
+	CString strSqlInsert = _T("INSERT INTO other(comtype,calitemname,unit,mainmode,vectorparms,tqd,gcl)\
+								      VALUES (:comtype,:calitemname,:unit,:mainmode,:vectorparms,:tqd,:gcl)");
 
 	stmtNew.Prepare(strSqlInsert);
 
 	while(SQLITE_ROW == rc)
 	{
 		stmtOld.Column_Int(_T("comid"), iComid);
-		stmtNew.Bind_Int(_T(":comid"),iComid);
 
 		stmtOld.Column_Int(_T("comtype"), iComtype);
 		stmtNew.Bind_Int(_T(":comtype"),iComtype);
 
 		stmtOld.Column_Text(_T("cadhandle"), strHandle);
-		stmtNew.Bind_Text(_T(":cadhandle"), strHandle);
 
 		stmtOld.Column_Text(_T("calitemname"), strCalitemname);
 		stmtNew.Bind_Text(_T(":calitemname"),strCalitemname);
@@ -935,12 +930,12 @@ void CDlgMsg_Ptdz::ExportTable_Other(const CString& strFilePathNew, const CStrin
 	stmtNew.Commit();
 }
 
-void CDlgMsg_Ptdz::ExportTable_GJ(const CString& strFilePathNew, const CString& strFilePathOld, const GJLX eGjlx)
+void CDlgMsg_Ptdz::ExportTable_GJ(const CString& strAnswerDBPath, const CString& strProjectDBPath, const GJLX eGjlx)
 {
 	CString strComtypes;
-	CSqliteDataBase dbNew(strFilePathNew);
+	CSqliteDataBase dbNew(strAnswerDBPath);
 	CSqliteDBStmt stmtNew(&dbNew);
-	CSqliteDataBase dbOld(strFilePathOld);
+	CSqliteDataBase dbOld(strProjectDBPath);
 	CSqliteDBStmt stmtOld(&dbOld);
 	stmtNew.Begin();
 
@@ -996,26 +991,25 @@ void CDlgMsg_Ptdz::ExportTable_GJ(const CString& strFilePathNew, const CString& 
 	//从原表格获取数据存入到新表格中
 	CString strSQLNew;
 	strSQLNew.Format(_T("CREATE TABLE %s(id INTEGER,\
-						comid INTEGER,\
-						comtype INTEGER,\
-						gjjb TEXT,\
-						zj REAL,\
-						zz_gj REAL,\
-						PRIMARY KEY (id))"), strTableName);
+										 comtype INTEGER,--类型\n\
+										 gjjb TEXT,--钢筋级别\n\
+										 zj REAL,--钢筋直径\n\
+										 zz_gj REAL,--钢筋总重\n\
+										 PRIMARY KEY (id))"), strTableName);
 	stmtNew.Exec(strSQLNew);
 
 	CString strSQLOld;
 	strSQLOld.Format(_T("SELECT G.comid,C.comtype,G.gjjb,G.zj,G.zz*G.cc_count AS zz_gj\
-						FROM graphicsresultv2 AS G\
-						LEFT OUTER JOIN components AS C\
-						ON G.comid = C.id\
-						WHERE C.comtype IN (%s)"), strComtypes);
+						 FROM graphicsresultv2 AS G\
+						      LEFT OUTER JOIN components AS C\
+						           ON G.comid = C.id\
+						 WHERE C.comtype IN (%s)"), strComtypes);
 	stmtOld.Prepare(strSQLOld);
 	int rc = stmtOld.Step();
 
 	CString strSQLNew_Insert;
-	strSQLNew_Insert.Format(_T("INSERT INTO %s(comid,comtype,gjjb,zj,zz_gj)\
-							   VALUES (:comid,:comtype,:gjjb,:zj,:zz_gj)"), strTableName);
+	strSQLNew_Insert.Format(_T("INSERT INTO %s(comtype,gjjb,zj,zz_gj)\
+							           VALUES (:comtype,:gjjb,:zj,:zz_gj)"), strTableName);
 	stmtNew.Prepare(strSQLNew_Insert);
 
 	int iComid = 0;
@@ -1026,7 +1020,6 @@ void CDlgMsg_Ptdz::ExportTable_GJ(const CString& strFilePathNew, const CString& 
 	while (SQLITE_ROW == rc)
 	{
 		stmtOld.Column_Int(_T("comid"), iComid);
-		stmtNew.Bind_Int(_T(":comid"), iComid);
 
 		stmtOld.Column_Int(_T("comtype"), icomtype);
 		stmtNew.Bind_Int(_T(":comtype"), icomtype);
@@ -1049,73 +1042,78 @@ void CDlgMsg_Ptdz::ExportTable_GJ(const CString& strFilePathNew, const CString& 
 	stmtNew.Commit();
 }
 
-void CDlgMsg_Ptdz::ExportGongChen(const CString& strDesPath)
-{
-	CZipFileManager zip;
-	CString strKeyValue;
-	CString strProjDir = CConnectManager::Instance()->GetFileDir(CPmDataBase::Project);		
-	CString strIniFilePath = CConnectManager::Instance()->GetIniPath(CPmDataBase::Project);	
-
-	PmMfc::Fun::ReadIniFileInfo(_T("Project"),_T("RunMode"), strKeyValue ,strIniFilePath);	
-
-	PmMfc::Fun::WriteIniFileInfo(_T("Project"),_T("RunMode"), _T("0") ,strIniFilePath);		
-
-	BOOL bOk = zip.ZipFolder(strDesPath, strProjDir, FALSE);								
-
-	PmMfc::Fun::WriteIniFileInfo(_T("Project"),_T("RunMode"), strKeyValue ,strIniFilePath);	
-}
-
 // CDlgMsg_Ptdz 消息处理程序
 BOOL CDlgMsg_Ptdz::OnCopyData(CWnd* pWnd, COPYDATASTRUCT* pCopyDataStruct)
 {
-	// TODO: 在此添加消息处理程序代码和/或调用默认值
-	WCHAR* pwChar = static_cast<WCHAR*>(pCopyDataStruct->lpData);
-
-	CString strAutoCmp = _T("\"command\":\"autoCmp\"");
-	CString strQuit = _T("\"command\":\"quit\"");
-	CString strSendData;
-
-	if (0 == strAutoCmp.CompareNoCase(pwChar))
+	try
 	{
-		//在指定路径导出数据库和工程压缩文件包
-		ExportTable(m_strDataBasePath, m_strPMDB);
-		ExportGongChen(m_strGongChenZipPath);
+		// TODO: 在此添加消息处理程序代码和/或调用默认值
+		WCHAR* pwChar = static_cast<WCHAR*>(pCopyDataStruct->lpData);
 
-		//在maininfo.ini文件中的newAnswer和resultFile字段中填写对应文件路径
-		BOOL bAnswer = PmMfc::Fun::WriteIniFileInfo(_T("AppInfo"),_T("newAnswer"), m_strGongChenZipPath ,GetMainIniPath());	
-		BOOL bResult = PmMfc::Fun::WriteIniFileInfo(_T("AppInfo"),_T("resultFile"), m_strDataBasePath ,GetMainIniPath());	
+		CString strAutoCmp = _T("{\"command\":\"autoCmp\"}");
+		CString strQuit = _T("{\"command\":\"quit\"}");
+		CString strSendMsg;
+		//获取当前工程路径
+		CString strFilePath = CConnectManager::Instance()->GetFileDir(CPmDataBase::Project);
 
-		//通过具体获取情况决定返回数据
-		if (bAnswer && bResult)
+		//定义当前工程project库
+		CString strFilePathDBProject = strFilePath + _T("\\project.pmdb");
+
+		if (0 == strAutoCmp.CompareNoCase(pwChar))
 		{
-			strSendData =_T("{\"result\":0,\"message\":\"\"}");
+			//在指定路径导出数据库和工程压缩文件包
+
+				ExportTable(m_strAnswerDBPath, strFilePathDBProject);
+				ExportGongChen(m_strGongChenZipPath);
+
+			//在maininfo.ini文件中的newAnswer和resultFile字段中填写对应文件路径
+			BOOL bAnswer = PmMfc::Fun::WriteIniFileInfo(_T("AppInfo"),_T("newAnswer"), m_strGongChenZipPath, m_strMainIniPath);	
+			BOOL bResult = PmMfc::Fun::WriteIniFileInfo(_T("AppInfo"),_T("resultFile"), m_strAnswerDBPath, m_strMainIniPath);	
+
+			if (FALSE == bAnswer)
+			{
+				m_strErrorMsg += _T("maininfo.ini文件中newAnswer字段写入失败;");
+			}
+
+			if (FALSE == bResult)
+			{
+				m_strErrorMsg += _T("maininfo.ini文件中resultFile字段写入失败;");
+			}
+
+			//通过具体获取情况决定返回数据
+			if (m_strErrorMsg.IsEmpty())	
+			{	
+				strSendMsg =_T("{\"result\":0,\"message\":\"\"}");
+			}
+			else
+			{
+				//如果没有正常获取到ini文件
+				strSendMsg.Format(_T("{\"result\":1,\"message\":\"%s\"}"), m_strErrorMsg);
+			}
+	
+			//将获取的cstring句柄 转化为 hwnd;
+			HWND hwnd_PTDZ = reinterpret_cast<HWND>(_ttoi(m_strHwnd_PTDZ));
+
+			if (pWnd)
+			{
+				COPYDATASTRUCT cpd;
+
+				cpd.dwData = 0;
+				cpd.cbData = (strSendMsg.GetLength()+1)*sizeof(TCHAR);
+				cpd.lpData = strSendMsg.GetBuffer();
+
+				::SendMessage(hwnd_PTDZ, WM_COPYDATA, NULL, reinterpret_cast<LPARAM>(&cpd));
+			}
 		}
-		else
+		else if (0 == strQuit.CompareNoCase(pwChar))
 		{
-			//如果没有正常获取到ini文件
-			strSendData =_T("{\"result\":1,\"message\":\"无法获取ini文件\"}");
-		}
-
-		//将获取的cstring句柄 转化为 hwnd;
-
-		HWND hwnd_PTDZ = reinterpret_cast<HWND>(_ttoi(m_strHwnd_PTDZ));
-
-		if (pWnd)
-		{
-			COPYDATASTRUCT cpd;
-
-			cpd.dwData = 0;
-			cpd.cbData = (strSendData.GetLength()+1)*sizeof(TCHAR);
-			cpd.lpData = strSendData.GetBuffer();
-
-			::SendMessage(pWnd->GetSafeHwnd(), WM_COPYDATA, NULL, reinterpret_cast<LPARAM>(&cpd));//测试，测试完参数1需替换成hwnd_PTDZ完成修改。
+			SL_UIFunction::sendCmdLine(_T("PMSaveProject"));
+			SL_UIFunction::sendCmdLine(_T("quit"));
 		}
 	}
-	else if (0 == strQuit.CompareNoCase(pwChar))
+	catch (...)
 	{
-		SL_UIFunction::sendCmdLine(_T("PMSaveProject"));
-		SL_UIFunction::sendCmdLine(_T("quit"));
+		//防止崩溃
 	}
-
 	return CDialog::OnCopyData(pWnd, pCopyDataStruct);
 }
